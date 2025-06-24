@@ -1,33 +1,61 @@
-#[macro_use] extern crate rocket;
+#[macro_use]
+extern crate rocket;
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
-use std::str::FromStr;
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
-use rocket::http::Status;
+use rocket::fairing::{Fairing, Info, Kind};
+use rocket::http::{Header, Status};
 use rocket::response::{content, status};
+use rocket::{Request, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::Result;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4};
+use std::str::FromStr;
 use tokio;
 
 mod block_utils;
 use block_utils::Block;
 
 mod account_utils;
-mod peers;
 mod db_utils;
+mod peers;
+
+pub struct CORS;
+
+#[rocket::async_trait]
+impl Fairing for CORS {
+    fn info(&self) -> Info {
+        Info {
+            name: "Add CORS headers to responses",
+            kind: Kind::Response,
+        }
+    }
+
+    async fn on_response<'r>(&self, _request: &'r Request<'_>, response: &mut Response<'r>) {
+        response.set_header(Header::new("Access-Control-Allow-Origin", "*"));
+        response.set_header(Header::new(
+            "Access-Control-Allow-Methods",
+            "POST, GET, PATCH, OPTIONS",
+        ));
+        response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
+        response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
+    }
+}
 
 #[get("/block/<hash>")]
 fn get_block(hash: &str) -> status::Custom<content::RawJson<String>> {
     match db_utils::get_block(hash) {
         Some(block) => {
             let block_json: String = block.to_json();
-            status::Custom(Status::Accepted, content::RawJson(block_json))            
+            status::Custom(Status::Accepted, content::RawJson(block_json))
         }
-        None => {
-            status::Custom(Status::NotFound, content::RawJson(String::from("{
+        None => status::Custom(
+            Status::NotFound,
+            content::RawJson(String::from(
+                "{
                 \"error\": \"A block with the given hash was not found in the database.\"
-            }")))
-        }
+            }",
+            )),
+        ),
     }
 }
 
@@ -36,53 +64,59 @@ fn get_frontier_block() -> status::Custom<content::RawJson<String>> {
     match db_utils::get_frontier_block() {
         Some(block) => {
             let block_json: String = block.to_json();
-            status::Custom(Status::Accepted, content::RawJson(block_json))            
+            status::Custom(Status::Accepted, content::RawJson(block_json))
         }
-        None => {
-            status::Custom(Status::NotFound, content::RawJson(String::from("{
+        None => status::Custom(
+            Status::NotFound,
+            content::RawJson(String::from(
+                "{
                 \"error\": \"An error occurred querying the database.\"
-            }")))
-        }
+            }",
+            )),
+        ),
     }
 }
 
 #[get("/peers")]
 fn get_peers(remote_addr: SocketAddr) -> status::Custom<content::RawJson<String>> {
     let mut peers = peers::Peers::new();
-    status::Custom(Status::Accepted, content::RawJson(peers.to_json()))            
+    status::Custom(Status::Accepted, content::RawJson(peers.to_json()))
 }
 
-#[post("/publish_block", format="application/json", data="<block_json>")]
+#[post("/publish_block", format = "application/json", data = "<block_json>")]
 fn post_block(block_json: String) -> status::Custom<content::RawJson<String>> {
     match Block::from_json(&block_json) {
-        Ok(block) => {
-            match Block::verify_block_is_valid(&block) {
-                Ok(_) => {
-                    db_utils::add_block(Block::add_acc_diff_to_block(block));
-                    status::Custom(Status::Accepted, content::RawJson(block_json))
-                },
-                Err(err) => {
-                    status::Custom(Status::BadRequest, content::RawJson(String::from(format!(
-                        "{{
+        Ok(block) => match Block::verify_block_is_valid(&block) {
+            Ok(_) => {
+                db_utils::add_block(Block::add_acc_diff_to_block(block));
+                status::Custom(Status::Accepted, content::RawJson(block_json))
+            }
+            Err(err) => status::Custom(
+                Status::BadRequest,
+                content::RawJson(String::from(format!(
+                    "{{
                             \"error\": \"Block verification failed. Reason: {}\"
                         }}",
-                        err
-                    ))))
-                }
-            }
+                    err
+                ))),
+            ),
         },
         Err(err) => {
             println!("{:?}", err);
-            status::Custom(Status::BadRequest, content::RawJson(String::from("{
+            status::Custom(
+                Status::BadRequest,
+                content::RawJson(String::from(
+                    "{
                 \"error\": \"The supplied block JSON was malformed.\"
-            }")))
+            }",
+                )),
+            )
         }
     }
 }
 
 #[launch]
 fn rocket() -> _ {
-
     db_utils::create_tables();
 
     let mut peers = peers::Peers::new();
@@ -111,41 +145,38 @@ fn rocket() -> _ {
     db_utils::add_block(genesis);
 
     // check peers to see if frontier block index > local block index,
-        // if so, fetch blocks sequentially and verify each block before appending to db
+    // if so, fetch blocks sequentially and verify each block before appending to db
 
-    rocket::build().mount("/", routes![
-        get_block,
-        get_peers,
-        get_frontier_block,
-        post_block
-    ])
-
+    rocket::build().attach(CORS).mount(
+        "/",
+        routes![get_block, get_peers, get_frontier_block, post_block],
+    )
 }
 
-    // println!("---");
-    // println!("Generating keys...");
+// println!("---");
+// println!("Generating keys...");
 
-    // let priv_key: SigningKey = account_utils::generate_priv_key();
-    // let priv_key_hex: String = account_utils::priv_key_to_hex(&priv_key);
-    
-    // let pub_key: VerifyingKey = account_utils::generate_pub_key(&priv_key);
-    // let pub_key_hex: String = account_utils::pub_key_to_hex(&pub_key);
+// let priv_key: SigningKey = account_utils::generate_priv_key();
+// let priv_key_hex: String = account_utils::priv_key_to_hex(&priv_key);
 
-    // println!("Generated private key: {}", priv_key_hex);
-    // println!("Generated public key: {}", pub_key_hex);
+// let pub_key: VerifyingKey = account_utils::generate_pub_key(&priv_key);
+// let pub_key_hex: String = account_utils::pub_key_to_hex(&pub_key);
 
+// println!("Generated private key: {}", priv_key_hex);
+// println!("Generated public key: {}", pub_key_hex);
 
-    // println!("---");
-    // println!("Generating genesis block...");
+// println!("---");
+// println!("Generating genesis block...");
 
-    // let genesis: Block = Block::generate_genesis_block();
-    // println!("{:#?}", genesis);
-    // println!("{}", genesis.to_json());
-    
-    // println!("Getting frontier block...");
-    // let frontier: Block = db_utils::get_frontier_block().expect("No frontier block");
-    // println!("{:#?}", frontier);
+// let genesis: Block = Block::generate_genesis_block();
+// println!("{:#?}", genesis);
+// println!("{}", genesis.to_json());
 
-    // return;
+// println!("Getting frontier block...");
+// let frontier: Block = db_utils::get_frontier_block().expect("No frontier block");
+// println!("{:#?}", frontier);
 
-    // Test peers.rs code
+// return;
+
+// Test peers.rs code
+
