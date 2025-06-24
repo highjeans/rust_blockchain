@@ -41,11 +41,11 @@ async function mineNewBlock(data) {
             "diff_bits": DIFFICULTY,
             "acc_diff": 0
         };
-    
+
         let dataHash = sha256.create();
         dataHash.update(block.data);
         let blockHash = sha256.create();
-    
+
         do {
             // console.log(`${block.index}${block.timestamp}${dataHash.hex()}${block.previous}${block.nonce}`);
             block.nonce += 1;
@@ -54,7 +54,7 @@ async function mineNewBlock(data) {
             block.hash = blockHash.hex();
             // console.log(blockHash.hex());
         } while (!isWorkValid(blockHash.arrayBuffer()));
-            
+
         publishBlock(block);
         mineNewBlock(`${Math.random()} is random!`);
     })
