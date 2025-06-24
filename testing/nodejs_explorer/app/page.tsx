@@ -19,11 +19,16 @@ async function getPreviousBlock(prevHash: string): Promise<Block> {
 async function fetchLast10Blocks() {
   let blocks = [await getLatestBlock()];
   while (blocks.length < 10) {
-    blocks.push(await getPreviousBlock(blocks[blocks.length-1].previous));
+    if (
+      blocks[blocks.length - 1].previous ===
+      "0000000000000000000000000000000000000000000000000000000000000000"
+    )
+      break;
+    blocks.push(await getPreviousBlock(blocks[blocks.length - 1].previous));
   }
   console.log(blocks);
   return blocks;
-} 
+}
 
 type Block = {
   index: number;
