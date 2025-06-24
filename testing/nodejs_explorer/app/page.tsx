@@ -1,6 +1,5 @@
 "use client";
-
-import { use, useEffect, useState } from "react";
+import { Suspense, use, useCallback } from "react";
 
 const axios = require("axios");
 
@@ -42,7 +41,21 @@ type Block = {
 };
 
 export default function Home() {
-  const blocks = use(fetchLast10Blocks());
+  const fetcher = useCallback(fetchLast10Blocks, []);
+  const fetch = fetcher().catch(() => "Failed to fetch");
+  return (
+    <Suspense fallback={<p className="text-white">Loading...</p>}>
+      <HomePage promise={fetch} />
+    </Suspense>
+  );
+}
+
+function HomePage({ promise }: { promise: Promise<string | Block[]> }) {
+  const blocks = use(promise);
+
+  if (typeof blocks === "string") {
+    return <p className="text-white">{blocks}</p>;
+  }
 
   return (
     <div className="p-8 text-white">
