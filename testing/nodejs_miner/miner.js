@@ -32,8 +32,8 @@ async function publishBlock(block) {
 async function mineNewBlock(data) {
     getLatestBlock().then(lb => {
         let block = {
-            "index": lb.index+1,
-            "timestamp": lb.timestamp+1,
+            "index": lb.index + 1,
+            "timestamp": Math.floor(Date.now() / 1000),
             "data": data,
             "previous": lb.hash,
             "nonce": 0,

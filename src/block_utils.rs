@@ -11,13 +11,13 @@ const DIFFICULTY: usize = 8; // number of zeros needed to prefix hash (bits)
 pub struct Block {
 
     pub index: u32,
-    pub timestamp: u32, // timestamp in seconds since 1970-01-01 00:00 UTC (epoch)
+    pub timestamp: u64, // timestamp in seconds since 1970-01-01 00:00 UTC (epoch)
     pub data: String, // data encoded in blocks
     pub previous: String, // hash for the previous block
     pub nonce: u32,
     pub hash: String,
     pub diff_bits: u32,
-    pub acc_diff: u32
+    pub acc_diff: u64
 
 }
 
@@ -77,13 +77,13 @@ impl Block {
         }
     }
 
-    pub fn verify_block_is_valid(block: &Block) -> bool {
+    pub fn verify_block_is_valid(block: &Block) -> Result<bool, &'static str> {
         // check if the previous block exists and is a valid block
         let is_genesis = block.index == 0;
         let prev_block_option: Option<Block> = db_utils::get_block(&block.previous);
         match prev_block_option {
             Some(_) => (),
-            None => { if !is_genesis { return false; } }
+            None => { if !is_genesis { return Err("No previous block."); } }
         };
 
         // check that the timestamp of the block is greater than that of the previous block and less than 10 minutes into the future
@@ -91,20 +91,22 @@ impl Block {
         match prev_block_option {
             Some(prev_block) => {
                 // not genesis
-                if block.index-prev_block.index != 1 { return false; };
-                if !(block.timestamp > prev_block.timestamp) { return false; };
+                if block.index-prev_block.index != 1 { return Err("Invalid block index."); };
+                if !(block.timestamp > prev_block.timestamp) { return Err("Timestamp is less than or equal to previous block."); };
             },
             None => ()
         };
-        if !(block.timestamp < (secs_since_epoch as u32 + 600)) { return false; };
+        if !(block.timestamp < (secs_since_epoch as u64 + 600)) { return Err("Block is too far ahead in the future."); };
+
+        // [TODO] verify that data is valid
 
         // verify that work (nonce) is valid
-        if !(Block::is_work_valid(block)) { return false; };
+        if !(Block::is_work_valid(block)) { return Err("Nonce is not valid."); };
 
         // verify that hash is valid
-        if Block::generate_hash(block) != block.hash { return false; };
+        if Block::generate_hash(block) != block.hash { return Err("Hash is not valid."); };
 
-        true
+        Ok(true)
     }
 
     pub fn add_acc_diff_to_block(mut block: Block) -> Block {
@@ -114,10 +116,10 @@ impl Block {
         match prev_block_option {
             Some(prev_block) => {
                 println!("{} | {}", prev_block.acc_diff, block.diff_bits);
-                block.acc_diff = prev_block.acc_diff + (2 as u32).pow(block.diff_bits);
+                block.acc_diff = prev_block.acc_diff + (2 as u64).pow(block.diff_bits);
             },
             None => {
-                block.acc_diff = (2 as u32).pow(block.diff_bits);
+                block.acc_diff = (2 as u64).pow(block.diff_bits);
             }
         };
 

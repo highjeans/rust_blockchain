@@ -56,13 +56,19 @@ fn get_peers(remote_addr: SocketAddr) -> status::Custom<content::RawJson<String>
 fn post_block(block_json: String) -> status::Custom<content::RawJson<String>> {
     match Block::from_json(&block_json) {
         Ok(block) => {
-            if Block::verify_block_is_valid(&block) {
-                db_utils::add_block(Block::add_acc_diff_to_block(block));
-                status::Custom(Status::Accepted, content::RawJson(block_json))
-            } else {
-                status::Custom(Status::BadRequest, content::RawJson(String::from("{
-                    \"error\": \"Block verification failed.\"
-                }")))
+            match Block::verify_block_is_valid(&block) {
+                Ok(_) => {
+                    db_utils::add_block(Block::add_acc_diff_to_block(block));
+                    status::Custom(Status::Accepted, content::RawJson(block_json))
+                },
+                Err(err) => {
+                    status::Custom(Status::BadRequest, content::RawJson(String::from(format!(
+                        "{{
+                            \"error\": \"Block verification failed. Reason: {}\"
+                        }}",
+                        err
+                    ))))
+                }
             }
         },
         Err(err) => {
